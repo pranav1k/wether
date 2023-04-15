@@ -1,124 +1,283 @@
-import Image from 'next/image'
-import { Inter } from 'next/font/google'
-
-const inter = Inter({ subsets: ['latin'] })
+import {
+  BsSearch,
+  BsCloudLightningRain,
+  BsCloudLightningRainFill,
+  BsSunFill,
+  BsCloudSnow,
+  BsFillCloudRainHeavyFill,
+  BsWind,
+  BsFillCloudyFill,
+  BsCloudFog2Fill,
+  BsCloudDrizzleFill,
+  BsCloudRainFill,
+  BsCloudSnowFill,
+} from "react-icons/bs";
+import { useState } from "react";
+import { useForm } from "react-hook-form";
 
 export default function Home() {
+  const [data, setData] = useState(null);
+  const [weatherIcon, setWeatherIcon] = useState(<BsSunFill />);
+  const [weatherInfo, setWeatherInfo] = useState("");
+  const [futureData, setFutureData] = useState([]);
+  const [todayData, setTodayData] = useState([]);
+  const { register, handleSubmit } = useForm();
+  const weatherInfoMap = {
+    0: "Clear Sky",
+    1: "Mainly Clear",
+    2: "Partly Cloudy",
+    3: "Overcast",
+    45: "Fog",
+    48: "Depositing Rime Fog",
+    51: "Light Drizzle",
+    53: "Moderate Drizzle",
+    55: "Heavy Drizzle",
+    56: "Light Freezing Drizzle",
+    57: "Heavy Freezing Drizzle",
+    61: "Slight Rain",
+    63: "Moderate Rain",
+    65: "Heavy Rain",
+    66: "Light Freezing Rain",
+    67: "Heavy Freezing Rain",
+    71: "Slight Snow",
+    73: "Moderate Snow",
+    75: "Heavy Snow",
+    77: "Snow Grains",
+    80: "Slight Rain Showers",
+    81: "Moderate Rain Showers",
+    82: "Violent Rain Showers",
+    85: "Slight Snow Showers",
+    86: "Heavy Snow Showers",
+    95: "Slight/Moderate Thunderstorm",
+    96: "Thunderstorm with Slight Hail",
+    99: "Thunderstorm with Heavy Hail",
+  };
+
+  function getWeatherInfo(weathercode) {
+    return weatherInfoMap[weathercode];
+  }
+
+  const textColors = {
+    0: "#292929",
+    1: "#464646",
+    2: "#464646",
+    3: "#464646",
+    45: "#505050",
+    48: "#505050",
+    51: "#505050",
+    53: "#505050",
+    55: "#505050",
+    56: "#505050",
+    57: "#505050",
+    61: "#1E0303",
+    63: "#1E0303",
+    65: "#1E0303",
+    66: "#1E0303",
+    67: "#1E0303",
+    71: "#373737",
+    73: "#373737",
+    75: "#373737",
+    77: "#373737",
+    80: "#ffffff",
+    81: "#ffffff",
+    82: "#ffffff",
+    85: "#ffffff",
+    86: "#ffffff",
+    95: "#ffffff",
+    96: "#ffffff",
+    99: "#ffffff",
+  };
+
+  function getColor(weathercode) {
+    return textColors[weathercode];
+  }
+
+  const weatherIcons = {
+    0: <BsSunFill />,
+    1: <BsFillCloudyFill />,
+    2: <BsFillCloudyFill />,
+    3: <BsFillCloudyFill />,
+    45: <BsCloudFog2Fill />,
+    48: <BsCloudFog2Fill />,
+    51: <BsCloudDrizzleFill />,
+    53: <BsCloudDrizzleFill />,
+    55: <BsCloudDrizzleFill />,
+    56: <BsCloudDrizzleFill />,
+    57: <BsCloudDrizzleFill />,
+    61: <BsCloudRainFill />,
+    63: <BsCloudRainFill />,
+    65: <BsCloudRainFill />,
+    66: <BsCloudRainFill />,
+    67: <BsCloudRainFill />,
+    71: <BsCloudSnow />,
+    73: <BsCloudSnow />,
+    75: <BsCloudSnow />,
+    77: <BsCloudSnow />,
+    80: <BsFillCloudRainHeavyFill />,
+    81: <BsFillCloudRainHeavyFill />,
+    82: <BsFillCloudRainHeavyFill />,
+    85: <BsCloudSnowFill />,
+    86: <BsCloudSnowFill />,
+    95: <BsCloudLightningRain />,
+    96: <BsCloudLightningRainFill />,
+    99: <BsCloudLightningRainFill />,
+  };
+
+  function getWeatherIcons(weathercode) {
+    return weatherIcons[weathercode];
+  }
+
+  async function handleRequest(formdata) {
+    const res = await fetch("/api/fetchWeather", {
+      method: "POST",
+      body: formdata.location,
+    });
+    let response = await res.json();
+    console.log(response);
+    await setData(response);
+    console.log(data);
+
+    setWeatherInfo(getWeatherInfo(response.current_weather.weathercode));
+
+    setWeatherIcon(getWeatherIcons(response.current_weather.weathercode));
+
+    let future = response.daily.time.map((timestamp, index) => {
+      return { timestamp, weathercode: response.daily.weathercode[index] };
+    });
+
+    let today = response.hourly.time.map((timestamp, index) => {
+      return { timestamp, weathercode: response.hourly.weathercode[index] };
+    });
+
+    setFutureData(future);
+    setTodayData(today);
+  }
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 w-full max-w-5xl items-center justify-between font-mono text-sm lg:flex">
-        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          Get started by editing&nbsp;
-          <code className="font-mono font-bold">pages/index.js</code>
-        </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:h-auto lg:w-auto lg:bg-none">
-          <a
-            className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0"
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            By{' '}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className="dark:invert"
-              width={100}
-              height={24}
-              priority
-            />
-          </a>
+    <div className="overflow-x-hidden h-screen w-screen flex flex-col bg-white text-gray-900">
+      <div
+        id="header"
+        className="flex flex-col sm:flex-row grow-0 items-center text-amber-500 "
+      >
+        <a href="#" className="flex items-center">
+          <BsSunFill className="text-3xl m-3" />
+          <h1 className="text-2xl">Wether</h1>
+        </a>
+        <form
+          onSubmit={handleSubmit(handleRequest)}
+          className="flex items-center bg-gray-200 p-1 rounded-full m-3"
+        >
+          <input
+            type="text"
+            name="location"
+            className="focus:outline-none bg-transparent border-r p-1 border-gray-800 text-gray-900"
+            {...register("location")}
+          ></input>
+          <button type="submit">
+            {" "}
+            <BsSearch className="text-gray-800 text-lg m-2" />{" "}
+          </button>
+        </form>
+      </div>
+      {data && (
+        <div
+          className="flex flex-col grow bg-cover"
+          style={{
+            backgroundImage: `url(https://pkkcdn.netlify.app/weather/${data.current_weather.weathercode}.jpg)`,
+            color: `${getColor(data.current_weather.weathercode)}`,
+          }}
+        >
+          <div className="flex items-center justify-center md:justify-end grow bg-cover">
+            <div className="p-10 m-10 rounded-xl backdrop-brightness-200 backdrop-blur-3xl">
+              <h1 className="text-5xl sm:text-8xl flex flex-col items-start">
+                <span className="text-xl sm:text-3xl">{data.name}</span>
+                <span className="flex">
+                  <span className="flex items-end justify-between">
+                    <span className="text-3xl sm:text-6xl p-3">
+                      {weatherIcon}
+                    </span>
+                    {data.current_weather.temperature}
+                  </span>
+                  <span className="text-3xl sm:text-6xl">°C</span>
+                </span>
+                <span className="text-2xl sm:text-3xl">{weatherInfo}</span>
+              </h1>
+              <p className="text-lg sm:text-2xl m-3 flex items-center">
+                <BsWind />
+                <span className="mx-2 sm:text-lg">
+                  {data.current_weather.winddirection}°&nbsp;
+                  {data.current_weather.windspeed} km/h
+                </span>
+              </p>
+            </div>
+          </div>
         </div>
-      </div>
-
-      <div className="relative flex place-items-center before:absolute before:h-[300px] before:w-[480px] before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-[240px] after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700/10 after:dark:from-sky-900 after:dark:via-[#0141ff]/40 before:lg:h-[360px]">
-        <Image
-          className="relative dark:drop-shadow-[0_0_0.3rem_#ffffff70] dark:invert"
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
-      </div>
-
-      <div className="mb-32 grid text-center lg:mb-0 lg:grid-cols-4 lg:text-left">
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`${inter.className} mb-3 text-2xl font-semibold`}>
-            Docs{' '}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p
-            className={`${inter.className} m-0 max-w-[30ch] text-sm opacity-50`}
-          >
-            Find in-depth information about Next.js features and API.
-          </p>
-        </a>
-
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`${inter.className} mb-3 text-2xl font-semibold`}>
-            Learn{' '}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p
-            className={`${inter.className} m-0 max-w-[30ch] text-sm opacity-50`}
-          >
-            Learn about Next.js in an interactive course with&nbsp;quizzes!
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`${inter.className} mb-3 text-2xl font-semibold`}>
-            Templates{' '}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p
-            className={`${inter.className} m-0 max-w-[30ch] text-sm opacity-50`}
-          >
-            Discover and deploy boilerplate example Next.js&nbsp;projects.
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`${inter.className} mb-3 text-2xl font-semibold`}>
-            Deploy{' '}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p
-            className={`${inter.className} m-0 max-w-[30ch] text-sm opacity-50`}
-          >
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
-    </main>
-  )
+      )}
+      {data && (
+        <div>
+          {todayData && (
+            <div className="flex flex-col py-10 items-center overflow-y-hidden overflow-x-auto h-max">
+              <h1 className="w-full p-3 border-b text-2xl">Today's weather</h1>
+              <div className="flex items-center">
+              {todayData.slice(0, 25).map((i) => (
+                <div
+                  className="grow rounded-xl h-min w-2/12 items-center bg-gradient-to-br p-3 m-3"
+                  style={{
+                    backgroundImage: `url(https://pkkcdn.netlify.app/weather/${i.weathercode}.jpg)`,
+                    color: `${getColor(i.weathercode)}`,
+                  }}
+                >
+                  <h1 className="">
+                    {new Date(i.timestamp * 1000).toLocaleTimeString(
+                      undefined,
+                      { hour: "numeric", minute: "numeric", hour12: true }
+                    )}
+                  </h1>
+                  <p className="truncate   flex items-center">
+                    {getWeatherIcons(i.weathercode)}&nbsp;
+                    <span className="text-ellipsis overflow-hidden">
+                      {getWeatherInfo(i.weathercode)}
+                    </span>
+                  </p>
+                </div>
+              ))}
+              </div>
+            </div>
+          )}
+          {futureData && (
+            <div className="flex flex-col justify-start items-start backdrop-blur-3xl">
+              <h1 className="text-2xl m-3 border-b w-full">
+                This week
+              </h1>
+              <div className="flex overflow-x-auto">
+                {futureData.map((i) => (
+                  <div
+                    className="w-1/6 backdrop-brightness-200 backdrop-blur-3xl bg-gradient-to-br p-3 m-3 bg-cover rounded-xl from-gray-200 to-gray-100"
+                    style={{
+                      backgroundImage: `url(https://pkkcdn.netlify.app/weather/${i.weathercode}.jpg)`,
+                      color: `${getColor(i.weathercode)}`,
+                    }}
+                  >
+                    <p>
+                      {new Date(i.timestamp * 1000).toLocaleDateString(
+                        "en-US",
+                        {
+                          day: "numeric",
+                          month: "long",
+                        }
+                      )}
+                    </p>
+                    <p className="flex truncate items-center">
+                      {getWeatherIcons(i.weathercode)}&nbsp;
+                      {getWeatherInfo(i.weathercode)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
