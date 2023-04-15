@@ -170,6 +170,7 @@ export default function Home() {
           <input
             type="text"
             name="location"
+            placeholder="Enter City Name"
             className="focus:outline-none bg-transparent border-r p-1 border-gray-800 text-gray-900"
             {...register("location")}
           ></input>
