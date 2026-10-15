@@ -1,6 +1,9 @@
 ## Wether
 
 This is a simple weather app built with the open meteo api.
+
+Live deploy at: [https://wether.pkk.in.eu.org](https://wether.pkk.in.eu.org)
+
 For more information about the API, refer to [https://open-meteo.com/en/docs](https://open-meteo.com/en/docs).
 
 ## Getting Started
