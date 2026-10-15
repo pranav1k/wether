@@ -1,3 +1,5 @@
+## Wether
+
 This is a simple weather app built with the open meteo api.
 For more information about the API, refer to [https://open-meteo.com/en/docs](https://open-meteo.com/en/docs).
 
