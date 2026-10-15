@@ -11,9 +11,11 @@ import {
   BsCloudDrizzleFill,
   BsCloudRainFill,
   BsCloudSnowFill,
+  BsChevronLeft,
+  BsChevronRight,
+  BsGeoAlt,
 } from "react-icons/bs";
-import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useState, useRef, useEffect } from "react";
 
 export default function Home() {
   const [data, setData] = useState(null);
@@ -21,7 +23,25 @@ export default function Home() {
   const [weatherInfo, setWeatherInfo] = useState("");
   const [futureData, setFutureData] = useState([]);
   const [todayData, setTodayData] = useState([]);
-  const { register, handleSubmit } = useForm();
+  const [location, setLocation] = useState("");
+
+  const [suggestions, setSuggestions] = useState([]);
+  const [isOpen, setIsOpen] = useState(false);
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(-1);
+
+  const todayScrollRef = useRef(null);
+  const weeklyScrollRef = useRef(null);
+  const searchContainerRef = useRef(null);
+  const suggestionsListRef = useRef(null);
+  const debounceTimerRef = useRef(null);
+  const abortControllerRef = useRef(null);
+
+  const scrollContainer = (ref, offset) => {
+    if (ref.current) {
+      ref.current.scrollBy({ left: offset, behavior: "smooth" });
+    }
+  };
   const weatherInfoMap = {
     0: "Clear Sky",
     1: "Mainly Clear",
@@ -89,7 +109,7 @@ export default function Home() {
   };
 
   function getColor(weathercode) {
-    return textColors[weathercode];
+    return textColors[weathercode] || "#ffffff";
   }
 
   const weatherIcons = {
@@ -127,158 +147,491 @@ export default function Home() {
     return weatherIcons[weathercode];
   }
 
-  async function handleRequest(formdata) {
-    const res = await fetch("/api/fetchWeather", {
-      method: "POST",
-      body: formdata.location,
-    });
-    let response = await res.json();
-    console.log(response);
-    await setData(response);
-    console.log(data);
+  async function fetchWeatherData(target) {
+    if (!target) return;
+    const isCoord = typeof target === "object" && target.latitude !== undefined;
+    const queryText = isCoord ? target.name : target.trim();
+    if (!queryText && !isCoord) return;
 
-    setWeatherInfo(getWeatherInfo(response.current_weather.weathercode));
+    try {
+      const res = await fetch("/api/fetchWeather", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(isCoord ? target : { location: queryText }),
+      });
+      let response = await res.json();
+      console.log(response);
 
-    setWeatherIcon(getWeatherIcons(response.current_weather.weathercode));
+      if (response?.current_weather) {
+        setData(response);
+        setWeatherInfo(getWeatherInfo(response.current_weather.weathercode));
+        setWeatherIcon(getWeatherIcons(response.current_weather.weathercode));
 
-    let future = response.daily.time.map((timestamp, index) => {
-      return { timestamp, weathercode: response.daily.weathercode[index] };
-    });
+        let future =
+          response.daily?.time?.map((timestamp, index) => {
+            return { timestamp, weathercode: response.daily.weathercode[index] };
+          }) || [];
 
-    let today = response.hourly.time.map((timestamp, index) => {
-      return { timestamp, weathercode: response.hourly.weathercode[index] };
-    });
+        let today =
+          response.hourly?.time?.map((timestamp, index) => {
+            return { timestamp, weathercode: response.hourly.weathercode[index] };
+          }) || [];
 
-    setFutureData(future);
-    setTodayData(today);
+        setFutureData(future);
+        setTodayData(today);
+      }
+    } catch (err) {
+      console.error("Failed to fetch weather data:", err);
+    }
   }
 
+  const selectSuggestion = (item) => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const displayName = item.label || item.name;
+    setLocation(displayName);
+    setIsOpen(false);
+    setSelectedIndex(-1);
+    fetchWeatherData({
+      latitude: item.latitude,
+      longitude: item.longitude,
+      name: displayName,
+    });
+  };
+
+  async function handleRequest(e) {
+    if (e) e.preventDefault();
+    if (isOpen && selectedIndex >= 0 && suggestions[selectedIndex]) {
+      selectSuggestion(suggestions[selectedIndex]);
+      return;
+    }
+    if (!location.trim()) return;
+    setIsOpen(false);
+    setSelectedIndex(-1);
+    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+    if (abortControllerRef.current) abortControllerRef.current.abort();
+    await fetchWeatherData(location.trim());
+  }
+
+  const handleInputChange = (e) => {
+    const val = e.target.value;
+    setLocation(val);
+    setSelectedIndex(-1);
+
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    const trimmed = val.trim();
+    if (trimmed.length < 2) {
+      setSuggestions([]);
+      setIsOpen(false);
+      setIsLoadingSuggestions(false);
+      return;
+    }
+
+    setIsLoadingSuggestions(true);
+    setIsOpen(true);
+
+    debounceTimerRef.current = setTimeout(async () => {
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
+
+      try {
+        const res = await fetch(
+          `/api/suggest?q=${encodeURIComponent(trimmed)}`,
+          {
+            signal: controller.signal,
+          }
+        );
+        if (!res.ok) throw new Error("Search failed");
+        const json = await res.json();
+        setSuggestions(json.results || []);
+        setIsOpen(true);
+      } catch (err) {
+        if (err.name !== "AbortError") {
+          console.error("Suggestion fetch error:", err);
+          setSuggestions([]);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          setIsLoadingSuggestions(false);
+        }
+      }
+    }, 300);
+  };
+
+  const handleKeyDown = (e) => {
+    if (!isOpen || suggestions.length === 0) {
+      if (e.key === "ArrowDown" && suggestions.length > 0) {
+        e.preventDefault();
+        setIsOpen(true);
+        setSelectedIndex(0);
+      }
+      return;
+    }
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setSelectedIndex((prev) =>
+        prev < suggestions.length - 1 ? prev + 1 : 0
+      );
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setSelectedIndex((prev) =>
+        prev <= 0 ? suggestions.length - 1 : prev - 1
+      );
+    } else if (e.key === "Enter") {
+      if (selectedIndex >= 0 && suggestions[selectedIndex]) {
+        e.preventDefault();
+        selectSuggestion(suggestions[selectedIndex]);
+      }
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      setIsOpen(false);
+      setSelectedIndex(-1);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedIndex >= 0 && suggestionsListRef.current) {
+      const itemEl = suggestionsListRef.current.children[selectedIndex];
+      if (itemEl && typeof itemEl.scrollIntoView === "function") {
+        itemEl.scrollIntoView({ block: "nearest" });
+      }
+    }
+  }, [selectedIndex]);
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (
+        searchContainerRef.current &&
+        !searchContainerRef.current.contains(event.target)
+      ) {
+        setIsOpen(false);
+        setSelectedIndex(-1);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      if (abortControllerRef.current) abortControllerRef.current.abort();
+    };
+  }, []);
+
   return (
-    <div className="overflow-x-hidden h-screen w-screen flex flex-col bg-white text-gray-900">
+    <div className="overflow-x-hidden min-h-screen w-full flex flex-col bg-gray-50 dark:bg-slate-950 text-gray-900 dark:text-gray-100">
       <div
         id="header"
-        className="flex flex-col sm:flex-row grow-0 items-center text-amber-500 "
+        className="flex flex-col gap-4 sm:flex-row grow-0 items-center px-5 py-3"
       >
-        <a href="#" className="flex items-center">
-          <BsSunFill className="text-3xl m-3" />
-          <h1 className="text-2xl">Wether</h1>
+        <a href="#" className="flex items-center text-3xl text-amber-500">
+          <BsSunFill className="m-3 text-3xl" />
+          <h1>Wether™</h1>
         </a>
-        <form
-          onSubmit={handleSubmit(handleRequest)}
-          className="flex items-center bg-gray-200 p-1 rounded-full m-3"
-        >
-          <input
-            type="text"
-            name="location"
-            placeholder="Enter City Name"
-            className="focus:outline-none bg-transparent border-r p-1 border-gray-800 text-gray-900"
-            {...register("location")}
-          ></input>
-          <button type="submit">
-            {" "}
-            <BsSearch className="text-gray-800 text-lg m-2" />{" "}
-          </button>
-        </form>
-      </div>
-      {data && (
         <div
-          className="flex flex-col grow bg-cover"
-          style={{
-            backgroundImage: `url(https://pkkcdn.netlify.app/weather/${data.current_weather.weathercode}.jpg)`,
-            color: `${getColor(data.current_weather.weathercode)}`,
-          }}
+          ref={searchContainerRef}
+          className="relative w-full max-w-sm sm:w-80 m-1"
         >
-          <div className="flex items-center justify-center md:justify-end grow bg-cover">
-            <div className="p-10 m-10 rounded-xl backdrop-brightness-200 backdrop-blur-3xl">
-              <h1 className="text-5xl sm:text-8xl flex flex-col items-start">
-                <span className="text-xl sm:text-3xl">{data.name}</span>
-                <span className="flex">
-                  <span className="flex items-end justify-between">
-                    <span className="text-3xl sm:text-6xl p-3">
-                      {weatherIcon}
+          <form
+            onSubmit={handleRequest}
+            className="flex items-center bg-gray-200 dark:bg-slate-700 px-3 py-1 rounded-full shadow-sm focus-within:ring-2 focus-within:ring-amber-500/50 transition-all"
+          >
+            <input
+              type="text"
+              name="location"
+              placeholder="Enter City Name"
+              className="flex-1 focus:outline-none bg-transparent p-1 placeholder:text-gray-500 dark:placeholder:text-gray-400 text-sm sm:text-base min-w-0"
+              value={location}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              onFocus={() => {
+                if (suggestions.length > 0 && location.trim().length >= 2) {
+                  setIsOpen(true);
+                }
+              }}
+              autoComplete="off"
+              role="combobox"
+              aria-expanded={isOpen}
+              aria-autocomplete="list"
+              aria-controls="suggestion-list"
+              aria-activedescendant={
+                selectedIndex >= 0
+                  ? `suggestion-option-${selectedIndex}`
+                  : undefined
+              }
+            />
+            {isLoadingSuggestions && (
+              <span className="shrink-0 mr-1 flex items-center justify-center">
+                <svg
+                  className="animate-spin h-4 w-4 text-gray-500 dark:text-gray-400"
+                  xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  ></circle>
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8v8H4z"
+                  ></path>
+                </svg>
+              </span>
+            )}
+            <button
+              type="submit"
+              aria-label="Search weather"
+              className="cursor-pointer"
+            >
+              <BsSearch className="text-gray-800 dark:text-gray-100 text-lg m-2" />
+            </button>
+          </form>
+
+          {isOpen && (
+            <div className="absolute left-0 right-0 top-full mt-2 z-50 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-2xl shadow-xl overflow-hidden py-1">
+              {suggestions.length > 0 ? (
+                <ul
+                  ref={suggestionsListRef}
+                  id="suggestion-list"
+                  role="listbox"
+                  className="max-h-60 overflow-y-auto divide-y divide-gray-100 dark:divide-slate-700/50"
+                >
+                  {suggestions.map((item, index) => {
+                    const isSelected = selectedIndex === index;
+                    return (
+                      <li
+                        key={item.id}
+                        id={`suggestion-option-${index}`}
+                        role="option"
+                        aria-selected={isSelected}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => selectSuggestion(item)}
+                        onMouseEnter={() => setSelectedIndex(index)}
+                        className={`px-3.5 py-2.5 cursor-pointer flex items-center justify-between transition-colors ${
+                          isSelected
+                            ? "bg-amber-100/70 dark:bg-slate-700/80 text-amber-950 dark:text-amber-200"
+                            : "hover:bg-gray-100 dark:hover:bg-slate-700/40 text-gray-800 dark:text-gray-200"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <BsGeoAlt
+                            className={`shrink-0 text-base ${
+                              isSelected
+                                ? "text-amber-600 dark:text-amber-400"
+                                : "text-gray-400 dark:text-gray-500"
+                            }`}
+                          />
+                          <div className="flex flex-col min-w-0 text-left">
+                            <span className="font-medium text-sm truncate">
+                              {item.name}
+                            </span>
+                            {(item.admin1 || item.country) && (
+                              <span className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                                {[item.admin1, item.country]
+                                  .filter(Boolean)
+                                  .join(", ")}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {item.country_code && (
+                          <span className="text-[10px] font-semibold tracking-wider uppercase px-1.5 py-0.5 rounded bg-gray-100 dark:bg-slate-900/60 text-gray-600 dark:text-gray-400 shrink-0 ml-2">
+                            {item.country_code}
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                !isLoadingSuggestions &&
+                location.trim().length >= 2 && (
+                  <div className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 text-center">
+                    No locations found
+                  </div>
+                )
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="m-3 lg:m-8">
+        {data && (
+          <div
+            className="flex flex-col grow bg-cover rounded-xl"
+            style={{
+              backgroundImage: `url(https://pkkcdn.netlify.app/weather/${data.current_weather.weathercode}.jpg)`,
+              color: `${getColor(data.current_weather.weathercode)}`,
+            }}
+          >
+            <div className="flex items-center justify-center md:justify-end grow bg-cover">
+              <div className="p-10 m-10 rounded-xl backdrop-brightness-200 backdrop-blur-3xl">
+                <h1 className="text-5xl sm:text-8xl flex flex-col items-start">
+                  <span className="text-xl sm:text-3xl">{data.name}</span>
+                  <span className="flex">
+                    <span className="flex items-end justify-between">
+                      <span className="text-3xl sm:text-6xl p-3">
+                        {weatherIcon}
+                      </span>
+                      {data.current_weather.temperature}
                     </span>
-                    {data.current_weather.temperature}
+                    <span className="text-3xl sm:text-6xl">°C</span>
                   </span>
-                  <span className="text-3xl sm:text-6xl">°C</span>
-                </span>
-                <span className="text-2xl sm:text-3xl">{weatherInfo}</span>
-              </h1>
-              <p className="text-lg sm:text-2xl m-3 flex items-center">
-                <BsWind />
-                <span className="mx-2 sm:text-lg">
-                  {data.current_weather.winddirection}°&nbsp;
-                  {data.current_weather.windspeed} km/h
-                </span>
-              </p>
+                  <span className="text-2xl sm:text-3xl">{weatherInfo}</span>
+                </h1>
+                <p className="text-lg sm:text-2xl m-3 flex items-center">
+                  <BsWind />
+                  <span className="mx-2 sm:text-lg">
+                    {data.current_weather.winddirection}°&nbsp;
+                    {data.current_weather.windspeed} km/h
+                  </span>
+                </p>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-      {data && (
-        <div>
-          {todayData && (
-            <div className="flex flex-col py-10 items-center overflow-y-hidden overflow-x-auto h-max">
-              <h1 className="w-full p-3 border-b text-2xl">Today's weather</h1>
-              <div className="flex items-center">
-              {todayData.slice(0, 25).map((i) => (
-                <div
-                  className="grow rounded-xl h-min w-2/12 items-center bg-gradient-to-br p-3 m-3"
-                  style={{
-                    backgroundImage: `url(https://pkkcdn.netlify.app/weather/${i.weathercode}.jpg)`,
-                    color: `${getColor(i.weathercode)}`,
-                  }}
-                >
-                  <h1 className="">
-                    {new Date(i.timestamp * 1000).toLocaleTimeString(
-                      undefined,
-                      { hour: "numeric", minute: "numeric", hour12: true }
-                    )}
-                  </h1>
-                  <p className="truncate   flex items-center">
-                    {getWeatherIcons(i.weathercode)}&nbsp;
-                    <span className="text-ellipsis overflow-hidden">
-                      {getWeatherInfo(i.weathercode)}
-                    </span>
-                  </p>
-                </div>
-              ))}
-              </div>
-            </div>
-          )}
-          {futureData && (
-            <div className="flex flex-col justify-start items-start backdrop-blur-3xl">
-              <h1 className="text-2xl m-3 border-b w-full">
-                This week
-              </h1>
-              <div className="flex overflow-x-auto">
-                {futureData.map((i) => (
-                  <div
-                    className="w-1/6 backdrop-brightness-200 backdrop-blur-3xl bg-gradient-to-br p-3 m-3 bg-cover rounded-xl from-gray-200 to-gray-100"
-                    style={{
-                      backgroundImage: `url(https://pkkcdn.netlify.app/weather/${i.weathercode}.jpg)`,
-                      color: `${getColor(i.weathercode)}`,
-                    }}
-                  >
-                    <p>
-                      {new Date(i.timestamp * 1000).toLocaleDateString(
-                        "en-US",
-                        {
-                          day: "numeric",
-                          month: "long",
-                        }
-                      )}
-                    </p>
-                    <p className="flex truncate items-center">
-                      {getWeatherIcons(i.weathercode)}&nbsp;
-                      {getWeatherInfo(i.weathercode)}
-                    </p>
+        )}
+        {data && (
+          <div className="space-y-8 mt-6">
+            {todayData && todayData.length > 0 && (
+              <div className="flex flex-col">
+                <div className="flex items-center justify-between border-b border-gray-300 dark:border-gray-700 pb-2 mb-3">
+                  <h2 className="text-2xl font-bold">Today's weather</h2>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => scrollContainer(todayScrollRef, -320)}
+                      aria-label="Scroll left in today's weather"
+                      className="p-2 rounded-full bg-gray-200 dark:bg-slate-800 hover:bg-gray-300 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 transition-colors shadow-sm cursor-pointer"
+                    >
+                      <BsChevronLeft className="text-sm" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => scrollContainer(todayScrollRef, 320)}
+                      aria-label="Scroll right in today's weather"
+                      className="p-2 rounded-full bg-gray-200 dark:bg-slate-800 hover:bg-gray-300 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 transition-colors shadow-sm cursor-pointer"
+                    >
+                      <BsChevronRight className="text-sm" />
+                    </button>
                   </div>
-                ))}
+                </div>
+                <div
+                  ref={todayScrollRef}
+                  className="weather-scroll flex overflow-x-auto gap-4 py-3 px-1 scroll-smooth"
+                >
+                  {todayData.slice(0, 25).map((i) => (
+                    <div
+                      key={i.timestamp}
+                      className="shrink-0 w-36 sm:w-44 h-32 p-4 rounded-xl shadow-md bg-cover bg-center flex flex-col justify-between transition-transform duration-200 hover:scale-[1.02]"
+                      style={{
+                        backgroundImage: `url(https://pkkcdn.netlify.app/weather/${i.weathercode}.jpg)`,
+                        color: `${getColor(i.weathercode)}`,
+                      }}
+                    >
+                      <span className="font-semibold text-sm sm:text-base whitespace-nowrap">
+                        {new Date(i.timestamp * 1000).toLocaleTimeString(
+                          undefined,
+                          { hour: "numeric", minute: "numeric", hour12: true }
+                        )}
+                      </span>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="shrink-0 text-xl">
+                          {getWeatherIcons(i.weathercode)}
+                        </span>
+                        <span
+                          className="truncate text-sm font-medium"
+                          title={getWeatherInfo(i.weathercode)}
+                        >
+                          {getWeatherInfo(i.weathercode)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
-        </div>
-      )}
+            )}
+            {futureData && futureData.length > 0 && (
+              <div className="flex flex-col">
+                <div className="flex items-center justify-between border-b border-gray-300 dark:border-gray-700 pb-2 mb-3">
+                  <h2 className="text-2xl font-bold">Weekly weather</h2>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => scrollContainer(weeklyScrollRef, -320)}
+                      aria-label="Scroll left in weekly weather"
+                      className="p-2 rounded-full bg-gray-200 dark:bg-slate-800 hover:bg-gray-300 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 transition-colors shadow-sm cursor-pointer"
+                    >
+                      <BsChevronLeft className="text-sm" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => scrollContainer(weeklyScrollRef, 320)}
+                      aria-label="Scroll right in weekly weather"
+                      className="p-2 rounded-full bg-gray-200 dark:bg-slate-800 hover:bg-gray-300 dark:hover:bg-slate-700 text-gray-700 dark:text-gray-200 transition-colors shadow-sm cursor-pointer"
+                    >
+                      <BsChevronRight className="text-sm" />
+                    </button>
+                  </div>
+                </div>
+                <div
+                  ref={weeklyScrollRef}
+                  className="weather-scroll flex overflow-x-auto gap-4 py-3 px-1 scroll-smooth"
+                >
+                  {futureData.map((i) => (
+                    <div
+                      key={i.timestamp}
+                      className="shrink-0 w-36 sm:w-44 h-32 p-4 rounded-xl shadow-md bg-cover bg-center flex flex-col justify-between transition-transform duration-200 hover:scale-[1.02]"
+                      style={{
+                        backgroundImage: `url(https://pkkcdn.netlify.app/weather/${i.weathercode}.jpg)`,
+                        color: `${getColor(i.weathercode)}`,
+                      }}
+                    >
+                      <span className="font-semibold text-sm sm:text-base whitespace-nowrap">
+                        {new Date(i.timestamp * 1000).toLocaleDateString(
+                          "en-US",
+                          {
+                            weekday: "short",
+                            month: "short",
+                            day: "numeric",
+                          }
+                        )}
+                      </span>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="shrink-0 text-xl">
+                          {getWeatherIcons(i.weathercode)}
+                        </span>
+                        <span
+                          className="truncate text-sm font-medium"
+                          title={getWeatherInfo(i.weathercode)}
+                        >
+                          {getWeatherInfo(i.weathercode)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
